@@ -7,7 +7,7 @@ import { authOptions } from "@/utils/authoptions";
 
 import Booking from "@/app/model/booking";
 
-import RoomBookedDate from "@/model/roomBookedDate";
+import RoomBookedDate from "@/app/model/roomBookedDate";
 import Razorpay from "razorpay";
 // Razorpay SDK for payments
 // Initialize Razorpay instance using the key and secret from environment variables
