@@ -1,0 +1,454 @@
+ Project 
+This is a HotelHub hotel management app built with:
+
+Next.js 16 (App Router)
+React 19
+MongoDB Atlas + Mongoose
+Material UI v9
+NextAuth (login with email/password + Google)
+Cloudinary (image uploads)
+react-toastify (success/error popups)
+framer-motion (table row animations)
+The app has a public homepage, login/register, an admin dashboard, and a user dashboard. Most CRUD work follows the same pattern: Model → API Route → Table Component → Add/Edit/Delete Modals.
+
+2. Folder Structure (Where Things Live)
+myapp/
+├── app/
+│   ├── api/                    ← All backend API routes
+│   │   ├── admin/              ← Admin-only APIs
+│   │   │   ├── team/
+│   │   │   ├── roomtype/
+│   │   │   └── room/
+│   │   ├── auth/[...nextauth]/ ← NextAuth login
+│   │   └── team/               ← Public APIs
+│   ├── model/                  ← Mongoose schemas
+│   ├── component/              ← React components
+│   │   └── dashboard/admin/    ← Admin CRUD pages
+│   ├── dashboard/admin/        ← Admin page entry
+│   └── layout.js
+├── utils/
+│   ├── dbConnect.js            ← MongoDB connection
+│   └── authoptions.js          ← NextAuth config
+├── middleware.js               ← Route protection
+├── .env                        ← Environment variables
+└── next.config.mjs
+3. Import Paths — Read This Carefully
+Your jsconfig.json maps @/* to the project root. Wrong imports are the #1 build error in this project.
+
+File location	Correct import
+utils/dbConnect.js
+@/utils/dbConnect
+utils/authoptions.js
+@/utils/authoptions
+app/model/team.js
+@/app/model/team
+app/model/room.js
+@/app/model/room
+app/model/facility.js
+@/app/model/facility
+Never write @/app/utils/dbConnect — that folder does not exist.
+
+Never write @/model/team — models are inside app/model/.
+
+4. Environment Variables (.env)
+Your .env must use plain KEY=value format. No JavaScript, no module.exports.
+
+DB_URI=mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/hotelhubs?retryWrites=true&w=majority
+NEXTAUTH_SECRET=your_random_secret_string
+NEXTAUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_key
+CLOUDINARY_API_SECRET=your_secret
+API=http://localhost:3000/api
+CLIENT_URL=http://localhost:3000
+Rules:
+
+No spaces around =
+Client-side variables must start with NEXT_PUBLIC_
+Restart npm run dev after changing .env
+5. How to Create a New Feature (Step by Step)
+When you want something new — say a “Services” module — follow this order:
+
+Step 1: Create the Mongoose Model
+File: app/model/service.js
+
+import mongoose from "mongoose";
+const serviceSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: null },
+    image: { type: String, default: null },
+  },
+  { timestamps: true }
+);
+export default mongoose.models.Service ||
+  mongoose.model("Service", serviceSchema);
+Always use mongoose.models.X || mongoose.model(...) so Next.js hot reload does not crash.
+
+Step 2: Create API Routes (CRUD)
+List + Create: app/api/admin/service/route.js
+
+import { NextResponse } from "next/server";
+import dbConnect from "@/utils/dbConnect";
+import Service from "@/app/model/service";
+export async function GET() {
+  await dbConnect();
+  try {
+    const services = await Service.find({});
+    return NextResponse.json(services);
+  } catch (error) {
+    return NextResponse.json({ err: error.message }, { status: 500 });
+  }
+}
+export async function POST(req) {
+  await dbConnect();
+  const body = await req.json();
+  const { name, description, image } = body;
+  try {
+    const service = await Service.create({ name, description, image });
+    return NextResponse.json(service);
+  } catch (error) {
+    return NextResponse.json({ err: error.message }, { status: 500 });
+  }
+}
+Update + Delete: app/api/admin/service/[id]/route.js
+
+import { NextResponse } from "next/server";
+import dbConnect from "@/utils/dbConnect";
+import Service from "@/app/model/service";
+export async function PUT(req, context) {
+  await dbConnect();
+  const { id } = await context.params;
+  try {
+    const body = await req.json();
+    const updated = await Service.findByIdAndUpdate(id, body, { new: true });
+    if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json(updated);
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+export async function DELETE(req, context) {
+  await dbConnect();
+  const { id } = await context.params;
+  try {
+    const deleted = await Service.findByIdAndDelete(id);
+    if (!deleted) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json(deleted);
+  } catch (error) {
+    return NextResponse.json({ err: error.message }, { status: 500 });
+  }
+}
+Note: In Next.js 16, always use await context.params to get the id.
+
+Step 3: Create Admin UI (Copy Team Module Style)
+Create a folder: app/component/dashboard/admin/service/
+
+You need these files (copy from team/ folder):
+
+File	Purpose
+ServiceTable.js
+Main table + fetch data
+AddServiceModal.js
+Create form
+EditServiceModal.js
+Edit form
+DeleteServiceModal.js
+Confirm delete
+style.js
+Shared styles
+Step 4: Register in Admin Dashboard
+In app/component/dashboard/admin/Admin.js:
+
+Import your component at the top
+Add a navigation item in the sidebar
+Add a case in the page router:
+case "/service":
+  return (
+    <Box sx={{ backgroundColor: "#000" }}>
+      <ServiceTable />
+    </Box>
+  );
+6. Admin Table Pattern (The Heart of CRUD UI)
+Every admin table in this project follows the same structure. Team module is the gold standard — copy it first.
+
+State you always need:
+const [items, setItems] = useState([]);
+const [loading, setLoading] = useState(false);
+const [page, setPage] = useState(0);
+const [rowsPerPage, setRowsPerPage] = useState(5);
+const [openAddModal, setOpenAddModal] = useState(false);
+const [openEditModal, setOpenEditModal] = useState(false);
+const [openDeleteModal, setOpenDeleteModal] = useState(false);
+const [currentItem, setCurrentItem] = useState(null);
+Fetch on mount:
+useEffect(() => {
+  fetchItems();
+}, []);
+const fetchItems = async () => {
+  try {
+    setLoading(true);
+    const response = await fetch(`/api/admin/service`);
+    const data = await response.json();
+    setItems(data);
+  } catch (error) {
+    toast.error("Failed to fetch data");
+  } finally {
+    setLoading(false);
+  }
+};
+After Add / Edit / Delete — update UI:
+// Add
+const handleAddSuccess = (newItem) => {
+  setItems((prev) => [...prev, newItem]);
+  setOpenAddModal(false);
+};
+// Edit
+const handleEditSuccess = (updatedItem) => {
+  setItems((prev) =>
+    prev.map((item) => (item._id === updatedItem._id ? updatedItem : item))
+  );
+  setOpenEditModal(false);
+};
+// Delete
+const handleDeleteSuccess = (deletedId) => {
+  setItems((prev) => prev.filter((item) => item._id !== deletedId));
+  setOpenDeleteModal(false);
+};
+Delete click — pass the correct object:
+const handleDeleteClick = (item) => {
+  setCurrentItem(item);   // Pass the actual record, not a related record
+  setOpenDeleteModal(true);
+};
+7. Modal Pattern
+Add Modal API call:
+const response = await fetch(`/api/admin/service`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name, description, image }),
+});
+const data = await response.json();
+if (!response.ok) throw new Error(data.err || "Failed");
+onSuccess(data);
+toast.success("Added successfully");
+Edit Modal API call:
+const response = await fetch(`/api/admin/service/${item._id}`, {
+  method: "PUT",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(formData),
+});
+Delete Modal — always check response:
+const response = await fetch(`/api/admin/service/${member._id}`, {
+  method: "DELETE",
+});
+const data = await response.json();
+if (!response.ok) {
+  throw new Error(data.error || "Delete failed");
+}
+onSuccess(member._id);
+toast.success("Deleted successfully");
+Never show success without checking response.ok.
+
+8. Image Upload (Cloudinary Pattern)
+Used in Team, Room Categories, Profile, etc.
+
+// 1. User picks file → preview with FileReader
+const reader = new FileReader();
+reader.onloadend = () => {
+  setForm((prev) => ({
+    ...prev,
+    image: file,
+    previewImage: reader.result,
+  }));
+};
+reader.readAsDataURL(file);
+// 2. On submit → upload to Cloudinary first
+const imageData = new FormData();
+imageData.append("file", form.image);
+imageData.append("upload_preset", "ml_default");
+const response = await fetch(
+  `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+  { method: "POST", body: imageData }
+);
+const data = await response.json();
+const imageUrl = data.secure_url;
+// 3. Save URL (not the file) to your API
+body: JSON.stringify({ name, image: imageUrl })
+9. MUI v9 Styling Rules (Very Important)
+This project uses MUI v9. Old MUI v5 props will cause console errors.
+
+Old (don't use)	New (use this)
+<Grid item xs={12} sm={6}>
+<Grid size={{ xs: 12, sm: 6 }}>
+InputLabelProps={{ style: { color: "#8A12FC" } }}
+slotProps={{ inputLabel: { sx: { color: "#8A12FC" } } }}
+InputProps={{ startAdornment: ... }}
+slotProps={{ input: { startAdornment: ... } }}
+Standard TextField style in this project:
+slotProps={{
+  inputLabel: { sx: { color: "#8A12FC" } },
+}}
+sx={{
+  input: { color: "black" },
+  "& .MuiOutlinedInput-root": {
+    "& fieldset": { borderColor: "#8A12FC" },
+    "&:hover fieldset": { borderColor: "#8A12FC" },
+    "&.Mui-focused fieldset": { borderColor: "#8A12FC" },
+  },
+}}
+Or put shared styles in style.js as textFieldStyles and spread them.
+
+Brand colors used across admin:
+Primary purple: #8A12FC
+Hover purple: #7a0eeb
+Edit icon: #3f51b5
+Delete icon: #ff5252
+10. Shared Style File Pattern (style.js)
+Every admin module has a style.js with:
+
+export const colors = { edit: "#3f51b5", delete: "#ff5252", ... };
+export const modalStyle = { position: "absolute", top: "50%", ... };
+export const StyledPaper = styled(Paper)({ ... });
+export const StyledTableHeader = styled(TableHead)({ ... });
+export const StyledHeaderCell = styled(TableCell)({ ... });
+export const AnimatedTableRow = motion(TableRow);
+export const textFieldStyles = { slotProps: { ... }, sx: { ... } };
+Copy from team/style.js or manageroomcategories/styles.js.
+
+11. Authentication (NextAuth)
+Config: utils/authoptions.js
+API route: app/api/auth/[...nextauth]/route.js
+Login page: app/login/page.js
+Session in layout: <SessionProvider> in app/layout.js
+Protected routes: middleware.js
+Admin APIs under /api/admin/* are protected by middleware. User must be logged in.
+
+Test auth: Open http://localhost:3000/api/auth/session — should return JSON, not HTML.
+
+12. Room Categories — Special Case (Two Collections)
+Room management uses two linked collections:
+
+Collection	Stores
+roomtypes
+Category name only
+rooms
+Price, image, capacity, linked via roomtype_id
+When adding a room category, the API creates both:
+
+const roomtype = await RoomType.create({ name });
+const room = await Room.create({ roomtype_id: roomtype._id });
+When deleting a room category, delete related rooms, facilities, images, and room numbers too.
+
+Display rule: Show roomtype.name in the table, not room.roomtype_id.name.
+
+Delete rule: Pass roomtype._id to delete API, not room._id.
+
+13. Common Mistakes and How to Avoid Them
+Mistake	Fix
+Export default doesn't exist
+Add export default function ComponentName() wrapper
+Can't resolve '@/app/utils/dbConnect'
+Use @/utils/dbConnect
+Can't resolve '@/model/team'
+Use @/app/model/team
+Delete shows success but nothing removed
+Check response.ok; pass correct _id
+Table shows "N/A"
+Display the right field from the right object
+InputLabelProps / InputProps / item warnings
+Use MUI v9 slotProps and size
+NextAuth CLIENT_FETCH_ERROR
+Fix turbopack root in next.config.mjs
+MongoDB timeout 98 seconds
+Fix .env format; whitelist IP in Atlas
+.env not loading
+No module.exports; use KEY=value only
+14. next.config.mjs (Required)
+const nextConfig = {
+  turbopack: {
+    root: import.meta.dirname,
+  },
+};
+export default nextConfig;
+Without this, Next.js may use the wrong project root and all API routes return 404.
+
+15. Master AI Prompt (Paste This When Building New Features)
+Copy the block below when asking an AI to build something in this project:
+
+PROJECT CONTEXT PROMPT
+
+You are working on HotelHub, a Next.js 16 App Router hotel admin project.
+STACK: React 19, MUI v9, Mongoose, MongoDB Atlas, NextAuth, Cloudinary, react-toastify, framer-motion.
+IMPORT RULES:
+- dbConnect: @/utils/dbConnect
+- Models: @/app/model/[name]
+- Never use @/app/utils/ or @/model/
+API PATTERN:
+- Create app/api/admin/[feature]/route.js for GET + POST
+- Create app/api/admin/[feature]/[id]/route.js for PUT + DELETE
+- Always await dbConnect() first
+- Use await context.params for dynamic id in Next.js 16
+- Return NextResponse.json()
+- Check response.ok on frontend before showing success
+UI PATTERN (copy from team module):
+- ServiceTable.js with fetch, pagination, modals
+- AddModal, EditModal, DeleteModal
+- style.js with StyledPaper, colors, modalStyle, textFieldStyles
+- Purple theme #8A12FC for buttons and inputs
+- toast.success / toast.error for feedback
+MUI V9 RULES:
+- Grid: use size={{ xs: 12, sm: 6 }} not item xs sm
+- TextField: use slotProps not InputLabelProps or InputProps
+IMAGE UPLOAD:
+- Upload to Cloudinary with NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+- Store secure_url in database, not file object
+DELETE:
+- Pass correct document _id to DELETE API
+- Always check response.ok before success toast
+- Update state with filter/map or refetch
+ADMIN INTEGRATION:
+- Register component in Admin.js navigation and case switch
+Do not over-engineer. Match existing team/room module code style exactly.
+16. Quick Reference — API Endpoints in This Project
+Feature	GET all	POST	PUT	DELETE
+Team (admin)
+/api/admin/team
+/api/admin/team
+/api/admin/team/[id]
+/api/admin/team/[id]
+Team (public)
+/api/team
+—
+—
+—
+Room Type
+/api/admin/roomtype
+/api/admin/roomtype
+—
+/api/admin/roomtype/[id]
+Room
+/api/admin/room
+/api/admin/room
+/api/admin/room/[id]
+/api/admin/room/[id]
+Room Numbers
+—
+/api/admin/room/roomno
+—
+/api/admin/room/roomno/[id]
+17. How to Turn This Into a PDF
+Select all text from this document
+Paste into Google Docs or Microsoft Word
+Set font: Arial or Calibri, size 11–12
+Add a title page: "HotelHub Development Guide"
+Use Heading 1 for main sections, Heading 2 for subsections
+File → Download → PDF
+End of document. This guide reflects your project as of July 2026. When in doubt, open the Team module (app/component/dashboard/admin/team/) and copy that pattern — it is the cleanest working example in your codebase.
+
+You can copy everything above into Word or Google Docs and export as PDF. If you want, I can also break this into separate PDFs (API only, UI only, MUI fixes only) — say which sections you want split out.
